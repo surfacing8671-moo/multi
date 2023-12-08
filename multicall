@@ -1,0 +1,369 @@
+
+
+
+
+export async function fetchVaultUserValues(account){
+try{
+const provider = new ethers.providers.JsonRpcProvider(
+  "https://eon-rpc.horizenlabs.io/ethv1"
+);
+const multicall = new Multicall({
+  multicallCustomContractAddress: "0x4ea6779581bDAcd376724A52070bE89FfB74eC39",
+  ethersProvider: provider,
+  tryAggregate: true,
+});
+//a helper function putting the calls all together it also combines the abis so ur functions arnt ever skipped
+function generateTokenCallContext(
+  reference,
+  contractAddress,
+  tokenAddress,
+  calls,
+  context
+) {
+
+//use functions to retrieve abi 
+  const abi = generateCommonABI();
+
+  const vaultAbi = generateVaultAbi();
+
+  return {
+    reference,
+    contractAddress,
+    abi: [...abi, ...vaultAbi],
+    calls,
+    context,
+  };
+}
+let batchCalls1 = [];
+const userAddress = account;
+
+//map the list of vaults or farms each one will be similar so you push it to the end of an array refrence the contracts via the index
+vaultList.forEach((address, index) => {
+  batchCalls1.push(
+    generateTokenCallContext("Token0" + index, address.token0, userAddress, [
+      {
+        reference: "Token0Balance",
+        methodName: "balanceOf",
+        methodParameters: [userAddress],
+      },
+      {
+        reference: "Token0Decimals",
+        methodName: "decimals",
+        methodParameters: [],
+      },
+      {
+        reference: "Token0Allow",
+        methodName: "allowance",
+        methodParameters: [userAddress, "0xB9200A707f11357D3B1cBDEbd51c8dDA84960Bde"],
+      },
+      { reference: "Token0Symbol", methodName: "symbol", methodParameters: [] },
+    ]),
+    generateTokenCallContext("Token1" + index, address.token1, userAddress, [
+      {
+        reference: "Token1Balance",
+        methodName: "balanceOf",
+        methodParameters: [userAddress],
+      },
+      {
+        reference: "Token1Decimals",
+        methodName: "decimals",
+        methodParameters: [],
+      },
+      {
+        reference: "Token1Allow",
+        methodName: "allowance",
+        methodParameters: [userAddress, "0xB9200A707f11357D3B1cBDEbd51c8dDA84960Bde"],
+      },
+      { reference: "Token1Symbol", methodName: "symbol", methodParameters: [] },
+    ]),
+
+    generateTokenCallContext(
+      "Vault" + index,
+      address.vAddress,
+      userAddress,
+      [
+        {
+          reference: "VaultBalance",
+          methodName: "balanceOf",
+          methodParameters: [userAddress],
+        },
+        {
+          reference: "GetTotalAmounts",
+          methodName: "getTotalAmounts",
+          methodParameters: [],
+        },
+        {
+          reference: "TotalSupply",
+          methodName: "totalSupply",
+          methodParameters: [],
+        },
+        {
+          reference: "AllowToken0",
+          methodName: "allowToken0",
+          methodParameters: [],
+        },
+        {
+          reference: "AllowToken1",
+          methodName: "allowToken1",
+          methodParameters: [],
+        },
+        {
+          reference: "VaultDecimals",
+          methodName: "decimals",
+          methodParameters: [],
+        },
+      ],
+      {
+//pass on needed values
+        id: address.id,
+        pool: address.pool
+      }
+    )
+  );
+});
+
+
+//does the one mrpc call 
+let re = await multicall.call(batchCalls1);
+
+console.log(re)
+//deconstructing the resaults. this part is cruicial to being able to read you end values for the front end
+let dataArray = [];
+for (let i = 0; i < vaultList.length; i++) {
+
+  let innerArray = [];
+  let innerArray2 = [];
+  for (let j = 0; j < re.results[`Vault${i}`].callsReturnContext.length; j++) {
+    let ref1 = re.results[`Vault${i}`].originalContractCallContext.context;
+    let e = "VaultAddress"
+    //console.log(re.results[`Vault${i}`].originalContractCallContext.context)
+    let ref2 = re.results[`Vault${i}`].originalContractCallContext.contractAddress;
+console.log(re.results[`Token0${i}`].callsReturnContext[3])
+    innerArray = ref1;
+    innerArray[e] = ref2;
+    for (
+      let g = 0;
+      g < re.results[`Token0${i}`].callsReturnContext.length;
+      g++
+    ) {
+      let ref = re.results[`Token0${i}`].callsReturnContext[g].reference;
+
+      let returnValues =
+        re.results[`Token0${i}`].callsReturnContext[g].returnValues[0];
+        let ref3 = re.results[`Token0${i}`].originalContractCallContext.contractAddress;
+        let r = "Address0"
+        let ref4 = "Allowance0"
+        let al = re.results[`Token0${i}`].callsReturnContext[2].returnValues[0]
+      innerArray[ref] = returnValues;
+      innerArray[r] = ref3;
+      innerArray[ref4] =al
+      
+    }
+    for (
+      let k = 0;
+      k < re.results[`Token1${i}`].callsReturnContext.length;
+      k++
+    ) {
+      let ref = re.results[`Token1${i}`].callsReturnContext[k].reference;
+      let ref3 = re.results[`Token1${i}`].originalContractCallContext.contractAddress;
+      let r = "Address1"
+      let ref4 = "Allowance1"
+      let al = re.results[`Token1${i}`].callsReturnContext[2].returnValues[0]
+      let returnValues =
+        re.results[`Token1${i}`].callsReturnContext[k].returnValues[0];
+      innerArray[ref] = returnValues;
+      innerArray[r] = ref3;
+      innerArray[ref4] =al
+    }
+
+    let ref = re.results[`Vault${i}`].callsReturnContext[j].reference;
+    if (ref === "GetTotalAmounts") {
+      let returnValues =
+        re.results[`Vault${i}`].callsReturnContext[j].returnValues;
+
+      innerArray[ref] = returnValues;
+    } else {
+      let returnValues =
+        re.results[`Vault${i}`].callsReturnContext[j].returnValues[0];
+
+      innerArray[ref] = returnValues;
+    }
+  }
+
+
+
+  dataArray.push(innerArray);
+}
+
+
+
+let balanceArray = [];
+let finishedArray = []
+for (let m = 0; m < vaultList.length; m++) {
+  //console.log( dataArray[m])
+  const totalVaultAmounts = {
+
+    total0: `${formatUnits(
+      dataArray[m].GetTotalAmounts[0],
+      `${dataArray[m].Token0Decimals}`
+    )}`,
+    total1: `${formatUnits(
+      dataArray[m].GetTotalAmounts[1],
+      `${dataArray[m].Token1Decimals}`
+    )}`,
+    0: formatUnits(
+      dataArray[m].GetTotalAmounts[0],
+      `${dataArray[m].Token0Decimals}`
+    ),
+    1: formatUnits(
+      dataArray[m].GetTotalAmounts[1],
+      `${dataArray[m].Token1Decimals}`
+    ),
+  };
+
+  const userVaultAmountsBN = {
+
+    amount0: `${new BigNumber(
+      formatUnits(dataArray[m].VaultBalance, `${dataArray[m].VaultDecimals}`)
+    )
+      .times(new BigNumber(totalVaultAmounts[0]))
+      .div(
+        new BigNumber(
+          formatUnits(dataArray[m].TotalSupply, `${dataArray[m].VaultDecimals}`)
+        )
+      )}`,
+    amount1: `${new BigNumber(
+      formatUnits(dataArray[m].VaultBalance, `${dataArray[m].VaultDecimals}`)
+    )
+      .times(new BigNumber(totalVaultAmounts[1]))
+      .div(
+        new BigNumber(
+          formatUnits(dataArray[m].TotalSupply, `${dataArray[m].VaultDecimals}`)
+        )
+      )}`,
+    0: new BigNumber(
+      formatUnits(dataArray[m].VaultBalance, `${dataArray[m].VaultDecimals}`)
+    )
+      .times(new BigNumber(totalVaultAmounts[0]))
+      .div(
+        new BigNumber(
+          formatUnits(dataArray[m].TotalSupply, `${dataArray[m].VaultDecimals}`)
+        )
+      ),
+    1: new BigNumber(
+      formatUnits(dataArray[m].VaultBalance, `${dataArray[m].VaultDecimals}`)
+    )
+      .times(new BigNumber(totalVaultAmounts[1]))
+      .div(
+        new BigNumber(
+          formatUnits(dataArray[m].TotalSupply, `${dataArray[m].VaultDecimals}`)
+        )
+      ),
+  };
+
+  const tokenPrice0 = await fetchTokenPrice(
+    dataArray[m].Token0Symbol.toLowerCase()
+  );
+  const tokenPrice1 = await fetchTokenPrice(
+    dataArray[m].Token1Symbol.toLowerCase()
+  );
+
+  const vaultTotalAmountsUsd = {
+ 
+    amount0: `${new BigNumber(totalVaultAmounts[0])
+
+      .times(new BigNumber(tokenPrice0.toFixed(2)))
+      .toFixed(2)}`,
+    amount1: `${new BigNumber(totalVaultAmounts[1])
+
+      .times(new BigNumber(tokenPrice1.toFixed(2)))
+      .toFixed(2)}`,
+    0: new BigNumber(totalVaultAmounts[0])
+     
+      .times(new BigNumber(tokenPrice0.toFixed(2)))
+      .toFixed(2),
+    1: new BigNumber(totalVaultAmounts[1])
+     
+      .times(new BigNumber(tokenPrice1.toFixed(2)))
+      .toFixed(2),
+    3: new BigNumber(totalVaultAmounts[1])
+  
+      .times(new BigNumber(tokenPrice1.toFixed(2)))
+      .plus(
+        new BigNumber(totalVaultAmounts[0])
+          
+          .times(new BigNumber(tokenPrice0.toFixed(2)))
+      ),
+    total: `${new BigNumber(totalVaultAmounts[1])
+     
+      .times(new BigNumber(tokenPrice1.toFixed(2)))
+      .plus(
+        new BigNumber(totalVaultAmounts[0])
+        
+          .times(new BigNumber(tokenPrice0.toFixed(2)))
+      ).toFixed(2)}`,
+  };
+
+
+  const userAmountsBN0 = new BigNumber(userVaultAmountsBN[0].toFixed(3));
+  const userAmountsBN1 = new BigNumber(userVaultAmountsBN[1].toFixed(3));
+  const tokenPrice0Big = new BigNumber(tokenPrice0.toFixed(3));
+  const tokenPrice1Big = new BigNumber(tokenPrice1.toFixed(3));
+  
+  const amount0 = userAmountsBN0.times(tokenPrice0Big).toFixed(2);
+  const amount1 = userAmountsBN1.times(tokenPrice1Big).toFixed(2);
+  
+  const userVaultAmountsUsd = {
+    id: dataArray[m].id,
+    amount0: `${amount0}`,
+    amount1: `${amount1}`,
+    0: amount0,
+    1: amount1,
+    total: new BigNumber(amount0).plus(amount1).toFixed(2) ,
+  };
+//console.log(new BigNumber(dataArray[m].Token0Balance))
+
+  const token0WalletBalance = new BigNumber((formatUnits((dataArray[m].Token0Balance), `${dataArray[m].Token0Decimals}`))).toFixed(4);
+  const token1WalletBalance =new BigNumber((formatUnits((dataArray[m].Token1Balance), `${dataArray[m].Token1Decimals}`))).toFixed(4);
+  const token0WalletBalanceUsd = token0WalletBalance * (tokenPrice0Big).toFixed(2)
+  const token1WalletBalanceUsd = token1WalletBalance * (tokenPrice1Big).toFixed(2)
+  //console.log(tokenPrice0);
+  const token0Address = dataArray[m].Address0
+  const token1Address = dataArray[m].Address1
+  const vaultAddress = dataArray[m].VaultAddress
+  const data = dataArray[m]
+
+ // console.log(data.pool)
+
+
+
+
+  //console.log(tokenPrice0);
+  let finish = {
+    totalVaultAmounts,
+    userVaultAmountsBN,
+    vaultTotalAmountsUsd,
+    userVaultAmountsUsd,
+    token0WalletBalance,
+    token1WalletBalance,
+    token0WalletBalanceUsd,
+    token1WalletBalanceUsd,
+    token0Address,
+    token1Address,
+    vaultAddress,
+    data,
+  
+  }
+
+
+
+
+
+ balanceArray.push(finish)
+
+
+return balanceArray
+
+}catch{console.log("ERROR")}
+}
+
